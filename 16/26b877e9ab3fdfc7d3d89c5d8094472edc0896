@@ -1,0 +1,23 @@
+tests/unit/test_env_file.py
+  s_49412daa5cf834::t_932e704a759d8f 564
+  s_49412daa5cf834::t_eb1880fcc41276 588
+  s_49412daa5cf834::t_c8c246ad15f8a7 411-563,565-587,589-597
+kiro/settings_window.py
+  s_49412daa5cf834::t_0517ab2177b663 34-38,44-46,50-62,65,72-89,105-111,113-118,121,126-142,145-153,161,167,169-171,173-175,177-184,186-190,192-195,198-201,203,206-209,211-212,214,216-304,307-316,336,344-352,358,364,382-413,415-419,442-447,449-453,457-462,466-470,473-476,478
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "1626b877e9ab3fdfc7d3d89c5d8094472edc0896",
+  "prompts": {},
+  "sessions": {
+    "s_49412daa5cf834": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ses_f7ff0827fffexNa25dAxBhABFM",
+        "model": "unknown"
+      },
+      "human_author": "leecoder <leecoder@aol.com>"
+    }
+  }
+}
