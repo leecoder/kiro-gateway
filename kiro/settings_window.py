@@ -32,7 +32,7 @@ from AppKit import (
     NSButtonTypeSwitch,
     NSColor,
 )
-from Foundation import NSMakePoint
+from Foundation import NSMakePoint, NSMakeSize
 
 _SECRET_KEYS = {"PROXY_API_KEY"}
 _HTTPS_KEYS = {"SSL_CERTFILE", "SSL_KEYFILE"}
@@ -304,23 +304,12 @@ class SettingsWindowController:
         if self._scroll_view is not None:
             new_canvas_h = self._expanded_h if self._advanced_visible else self._collapsed_h
             viewport_h = min(new_canvas_h, _MAX_VIS_H)
-            sv_origin = self._scroll_view.frame().origin
             self._scroll_view.setFrame_(
-                NSMakeRect(sv_origin.x, _BTN_AREA, self._canvas_w, viewport_h)
+                NSMakeRect(_PAD, _BTN_AREA, self._canvas_w, viewport_h)
             )
             if self.window is not None:
-                old_frame = self.window.frame()
-                new_win_h = viewport_h + _BTN_AREA + 4
-                delta = new_win_h - old_frame.size.height
-                self.window.setFrame_(
-                    NSMakeRect(
-                        old_frame.origin.x,
-                        old_frame.origin.y - delta,
-                        _W,
-                        new_win_h,
-                    ),
-                    True,
-                )
+                new_content_h = viewport_h + _BTN_AREA + 4
+                self.window.setContentSize_(NSMakeSize(_W, new_content_h))
             if self._advanced_visible:
                 doc = self._scroll_view.documentView()
                 doc.scrollPoint_(NSMakePoint(0, self._expanded_h - viewport_h))
