@@ -408,3 +408,190 @@ class TestSettingsRevealToggle:
             ctrl._make_row("SERVER_PORT", "Port", 560.0)
             assert "SERVER_PORT" not in ctrl._secret_pairs
 
+
+def _patch_appkit():
+    return (
+        patch("kiro.settings_window.NSSecureTextField"),
+        patch("kiro.settings_window.NSTextField"),
+        patch("kiro.settings_window.NSButton"),
+        patch("kiro.settings_window.NSImage"),
+        patch("kiro.settings_window.NSMakeRect", return_value=None),
+        patch("kiro.settings_window.NSStackView"),
+        patch("kiro.settings_window.NSBox"),
+        patch("kiro.settings_window.NSBoxSeparator", 0),
+        patch("kiro.settings_window.NSButtonTypeSwitch", 0),
+        patch("kiro.settings_window.NSColor"),
+        patch("kiro.settings_window.NSFont"),
+        patch("kiro.settings_window.objc"),
+    )
+
+
+class TestAdvancedSection:
+
+    def _make_ctrl(self, ssl_certfile="", ssl_keyfile=""):
+        from contextlib import ExitStack
+        from kiro.settings_window import SettingsWindowController
+
+        stack = ExitStack()
+        for p in _patch_appkit():
+            stack.enter_context(p)
+
+        ctrl = SettingsWindowController(
+            keys=["PROXY_API_KEY", "SERVER_PORT", "SSL_CERTFILE", "SSL_KEYFILE"],
+            labels={
+                "PROXY_API_KEY": "API Key",
+                "SERVER_PORT": "Port",
+                "SSL_CERTFILE": "SSL Certificate",
+                "SSL_KEYFILE": "SSL Key File",
+            },
+            values={
+                "PROXY_API_KEY": "s3cr3t",
+                "SERVER_PORT": "8000",
+                "SSL_CERTFILE": ssl_certfile,
+                "SSL_KEYFILE": ssl_keyfile,
+            },
+            on_save=MagicMock(),
+        )
+        return ctrl, stack
+
+    def test_advanced_section_hidden_by_default(self):
+        ctrl, stack = self._make_ctrl()
+        with stack:
+            assert ctrl._advanced_visible is False
+
+    def test_toggle_advanced_shows_section(self):
+        ctrl, stack = self._make_ctrl()
+        with stack:
+            adv_stack = MagicMock()
+            ctrl._advanced_stack = adv_stack
+            ctrl._advanced_toggle_btn = MagicMock()
+
+            ctrl.toggleAdvanced_(MagicMock())
+
+            assert ctrl._advanced_visible is True
+            adv_stack.setHidden_.assert_called_with(False)
+
+    def test_toggle_advanced_twice_collapses_section(self):
+        ctrl, stack = self._make_ctrl()
+        with stack:
+            adv_stack = MagicMock()
+            ctrl._advanced_stack = adv_stack
+            ctrl._advanced_toggle_btn = MagicMock()
+
+            ctrl.toggleAdvanced_(MagicMock())
+            ctrl.toggleAdvanced_(MagicMock())
+
+            assert ctrl._advanced_visible is False
+            adv_stack.setHidden_.assert_called_with(True)
+
+    def test_toggle_button_label_changes_on_expand(self):
+        ctrl, stack = self._make_ctrl()
+        with stack:
+            ctrl._advanced_stack = MagicMock()
+            btn = MagicMock()
+            ctrl._advanced_toggle_btn = btn
+
+            ctrl.toggleAdvanced_(MagicMock())
+
+            call_args = btn.setTitle_.call_args[0][0]
+            assert "▼" in call_args
+
+    def test_https_checkbox_off_by_default_when_no_certs(self):
+        ctrl, stack = self._make_ctrl(ssl_certfile="", ssl_keyfile="")
+        with stack:
+            from kiro.settings_window import SettingsWindowController
+            https_enabled = bool(
+                ctrl.initial_values.get("SSL_CERTFILE", "").strip()
+                or ctrl.initial_values.get("SSL_KEYFILE", "").strip()
+            )
+            assert https_enabled is False
+
+    def test_https_checkbox_on_when_certs_present(self):
+        ctrl, stack = self._make_ctrl(ssl_certfile="/etc/ssl/cert.pem", ssl_keyfile="/etc/ssl/key.pem")
+        with stack:
+            https_enabled = bool(
+                ctrl.initial_values.get("SSL_CERTFILE", "").strip()
+                or ctrl.initial_values.get("SSL_KEYFILE", "").strip()
+            )
+            assert https_enabled is True
+
+    def test_https_toggled_enables_fields(self):
+        ctrl, stack = self._make_ctrl()
+        with stack:
+            cert_field = MagicMock()
+            key_field = MagicMock()
+            ctrl.fields["SSL_CERTFILE"] = cert_field
+            ctrl.fields["SSL_KEYFILE"] = key_field
+
+            sender = MagicMock()
+            sender.state.return_value = 1
+            ctrl._https_checkbox = sender
+            ctrl.httpsToggled_(sender)
+
+            cert_field.setEnabled_.assert_called_with(True)
+            key_field.setEnabled_.assert_called_with(True)
+
+    def test_https_toggled_disables_fields(self):
+        ctrl, stack = self._make_ctrl()
+        with stack:
+            cert_field = MagicMock()
+            key_field = MagicMock()
+            ctrl.fields["SSL_CERTFILE"] = cert_field
+            ctrl.fields["SSL_KEYFILE"] = key_field
+
+            sender = MagicMock()
+            sender.state.return_value = 0
+            ctrl._https_checkbox = sender
+            ctrl.httpsToggled_(sender)
+
+            cert_field.setEnabled_.assert_called_with(False)
+            key_field.setEnabled_.assert_called_with(False)
+
+    def test_save_clears_tls_keys_when_https_disabled(self):
+        ctrl, stack = self._make_ctrl(ssl_certfile="/cert.pem", ssl_keyfile="/key.pem")
+        with stack:
+            on_save = MagicMock()
+            ctrl.on_save = on_save
+
+            cert_field = MagicMock()
+            cert_field.stringValue.return_value = "/cert.pem"
+            key_field = MagicMock()
+            key_field.stringValue.return_value = "/key.pem"
+            ctrl.fields["SSL_CERTFILE"] = cert_field
+            ctrl.fields["SSL_KEYFILE"] = key_field
+
+            checkbox = MagicMock()
+            checkbox.state.return_value = 0
+            ctrl._https_checkbox = checkbox
+            ctrl.window = MagicMock()
+
+            ctrl.saveClicked_(MagicMock())
+
+            saved = on_save.call_args[0][0]
+            assert saved["SSL_CERTFILE"] == ""
+            assert saved["SSL_KEYFILE"] == ""
+
+    def test_save_preserves_tls_keys_when_https_enabled(self):
+        ctrl, stack = self._make_ctrl(ssl_certfile="/cert.pem", ssl_keyfile="/key.pem")
+        with stack:
+            on_save = MagicMock()
+            ctrl.on_save = on_save
+
+            cert_field = MagicMock()
+            cert_field.stringValue.return_value = "/cert.pem"
+            key_field = MagicMock()
+            key_field.stringValue.return_value = "/key.pem"
+            ctrl.fields["SSL_CERTFILE"] = cert_field
+            ctrl.fields["SSL_KEYFILE"] = key_field
+
+            checkbox = MagicMock()
+            checkbox.state.return_value = 1
+            ctrl._https_checkbox = checkbox
+            ctrl.window = MagicMock()
+
+            ctrl.saveClicked_(MagicMock())
+
+            saved = on_save.call_args[0][0]
+            assert saved["SSL_CERTFILE"] == "/cert.pem"
+            assert saved["SSL_KEYFILE"] == "/key.pem"
+
