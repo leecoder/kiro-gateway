@@ -201,6 +201,8 @@ class SettingsWindowController:
         sv.setHasHorizontalScroller_(False)
         sv.setAutohidesScrollers_(True)
         sv.setBorderType_(0)
+        sv.setDrawsBackground_(False)
+        sv.setBackgroundColor_(NSColor.windowBackgroundColor())
         self._scroll_view = sv
 
         # Scroll to top (highest y value since NSView y=0 is bottom)
