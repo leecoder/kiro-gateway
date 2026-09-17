@@ -24,39 +24,37 @@ from AppKit import (
     NSTextField,
     NSSecureTextField,
     NSButton,
-    NSStackView,
-    NSUserInterfaceLayoutOrientationVertical,
-    NSUserInterfaceLayoutOrientationHorizontal,
+    NSScrollView,
     NSApplicationActivationPolicyAccessory,
     NSApp,
     NSBezelStyleRegularSquare,
     NSImage,
     NSButtonTypeSwitch,
     NSColor,
-    NSFont,
-    NSBox,
-    NSBoxSeparator,
 )
 from Foundation import NSMakePoint
 
 _SECRET_KEYS = {"PROXY_API_KEY"}
-
-# Keys that live inside the Advanced / HTTPS section
 _HTTPS_KEYS = {"SSL_CERTFILE", "SSL_KEYFILE"}
+
+_ADVANCED_KEYS = {
+    "KIRO_CREDS_FILE", "KIRO_CLI_DB_FILE", "KIRO_API_REGION",
+    "VPN_PROXY_URL", "DEBUG_MODE", "SSL_CERTFILE", "SSL_KEYFILE",
+}
 
 _ICON_DIR = os.path.join(os.path.dirname(__file__), "resources")
 
+_W = 560.0
+_PAD = 14.0
+_ROW_H = 28.0
+_ROW_GAP = 6.0
+_LABEL_W = 160.0
+_FIELD_W = 352.0
+_BTN_AREA = 44.0
+_MAX_VIS_H = 520.0
+
 
 def _load_icon(name: str) -> Optional[NSImage]:
-    """Load an icon by SF Symbol name, falling back to a bundled PNG.
-
-    Args:
-        name: Icon name using dash notation (e.g. ``eye-slash``).
-              The SF Symbol lookup converts dashes to dots automatically.
-
-    Returns:
-        An ``NSImage`` instance, or ``None`` when neither source is available.
-    """
     img = NSImage.imageWithSystemSymbolName_accessibilityDescription_(
         name.replace("-", "."), None
     )
@@ -69,24 +67,6 @@ def _load_icon(name: str) -> Optional[NSImage]:
 
 
 class SettingsWindowController:
-    """Controller that builds and manages the Settings NSWindow.
-
-    The window layout is:
-    - One labelled row per regular key.
-    - A separator + collapsible **Advanced** section containing:
-      - ``[ ] Enable HTTPS`` checkbox
-      - ``SSL_CERTFILE`` / ``SSL_KEYFILE`` text fields (enabled only when
-        the checkbox is checked).
-
-    Args:
-        keys: Ordered list of all editable .env key names.
-        labels: Human-readable label for each key.
-        values: Current values for each key.
-        on_save: Callback invoked with the new values dict on Save.
-    """
-
-    # Keys excluded from the "regular" top section (handled in Advanced)
-    _ADVANCED_KEYS = _HTTPS_KEYS
 
     def __init__(
         self,
@@ -103,270 +83,202 @@ class SettingsWindowController:
         self._secret_pairs: Dict[str, Tuple[NSSecureTextField, NSTextField]] = {}
         self._secret_rows: Dict[str, NSView] = {}
 
-        # Advanced section state
         self._advanced_visible: bool = False
-        self._advanced_stack: Optional[NSStackView] = None
+        self._advanced_views: List[NSView] = []
         self._https_checkbox: Optional[NSButton] = None
         self._advanced_toggle_btn: Optional[NSButton] = None
+        self._scroll_view: Optional[NSScrollView] = None
+
+        self._collapsed_h: float = 0.0
+        self._expanded_h: float = 0.0
+        self._canvas_w: float = 0.0
 
         self.window: Optional[NSWindow] = None
-        self._container: Optional[NSView] = None
-        self._outer_stack: Optional[NSStackView] = None
-
-    # ------------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------------
 
     def show(self) -> None:
-        """Build and display the settings window."""
         app = NSApplication.sharedApplication()
         if app.activationPolicy() != NSApplicationActivationPolicyAccessory:
             app.setActivationPolicy_(NSApplicationActivationPolicyAccessory)
-
         window = self._build_window()
         self.window = window
         window.center()
         window.makeKeyAndOrderFront_(None)
         NSApp.activateIgnoringOtherApps_(True)
 
-    # ------------------------------------------------------------------
-    # Window / layout construction
-    # ------------------------------------------------------------------
+    def _row_stride(self) -> float:
+        return _ROW_H + _ROW_GAP
 
     def _build_window(self) -> NSWindow:
-        """Construct the full NSWindow with all subviews.
+        regular_keys = [k for k in self.keys if k not in _ADVANCED_KEYS]
+        adv_non_tls = [k for k in self.keys if k in _ADVANCED_KEYS and k not in _HTTPS_KEYS]
+        tls_keys = [k for k in ("SSL_CERTFILE", "SSL_KEYFILE") if k in self.keys]
 
-        Returns:
-            A configured, ready-to-show NSWindow.
-        """
-        content_width = 580.0
-        row_height = 24.0
-        spacing = 8.0
-
-        regular_keys = [k for k in self.keys if k not in self._ADVANCED_KEYS]
-        n_regular = len(regular_keys)
-
-        # Estimate initial height (advanced section collapsed)
-        fields_height = n_regular * (row_height + spacing) + spacing
-        advanced_header_height = row_height + spacing  # toggle row
-        buttons_height = 40.0
-        window_height = fields_height + advanced_header_height + buttons_height + 24.0
-
-        window = NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
-            NSMakeRect(0, 0, content_width, window_height),
-            1 << 2 | 1 << 3,  # titled | closable
-            2,  # buffered
-            False,
-        )
-        window.setTitle_("Kiro Gateway — Settings")
-        window.setReleasedWhenClosed_(False)
-
-        container = NSView.alloc().initWithFrame_(
-            NSMakeRect(0, 0, content_width, window_height)
-        )
-        self._container = container
-
-        # ── Outer vertical stack ──────────────────────────────────────
-        outer_stack = NSStackView.alloc().initWithFrame_(
-            NSMakeRect(12, buttons_height + 8, content_width - 24, window_height - buttons_height - 20)
-        )
-        outer_stack.setOrientation_(NSUserInterfaceLayoutOrientationVertical)
-        outer_stack.setSpacing_(spacing)
-        self._outer_stack = outer_stack
-
-        # Regular rows
-        for key in regular_keys:
-            row = self._make_row(key, self.labels.get(key, key), content_width)
-            outer_stack.addArrangedSubview_(row)
-
-        # Advanced toggle row
-        adv_toggle_row = self._make_advanced_toggle_row(content_width)
-        outer_stack.addArrangedSubview_(adv_toggle_row)
-
-        # Advanced content stack (hidden by default)
-        adv_stack = self._make_advanced_stack(content_width)
-        adv_stack.setHidden_(True)
-        self._advanced_stack = adv_stack
-        outer_stack.addArrangedSubview_(adv_stack)
-
-        container.addSubview_(outer_stack)
-
-        # ── Save / Cancel buttons ─────────────────────────────────────
-        save_btn = NSButton.alloc().initWithFrame_(
-            NSMakeRect(content_width - 180, 8, 80, 28)
-        )
-        save_btn.setTitle_("Save")
-        save_btn.setBezelStyle_(1)
-        save_btn.setTarget_(self)
-        save_btn.setAction_("saveClicked:")
-
-        cancel_btn = NSButton.alloc().initWithFrame_(
-            NSMakeRect(content_width - 92, 8, 80, 28)
-        )
-        cancel_btn.setTitle_("Cancel")
-        cancel_btn.setBezelStyle_(1)
-        cancel_btn.setTarget_(self)
-        cancel_btn.setAction_("cancelClicked:")
-
-        container.addSubview_(save_btn)
-        container.addSubview_(cancel_btn)
-        window.setContentView_(container)
-        return window
-
-    def _make_advanced_toggle_row(self, content_width: float) -> NSView:
-        """Build the '▶ Advanced' disclosure button row.
-
-        Args:
-            content_width: Total content area width for layout.
-
-        Returns:
-            An NSView containing the toggle button and a separator line.
-        """
-        row_height = 24.0
-        row = NSStackView.alloc().initWithFrame_(
-            NSMakeRect(0, 0, content_width - 24, row_height)
-        )
-        row.setOrientation_(NSUserInterfaceLayoutOrientationHorizontal)
-        row.setSpacing_(6)
-
-        btn = NSButton.alloc().initWithFrame_(NSMakeRect(0, 0, 120, row_height))
-        btn.setTitle_("▶  Advanced")
-        btn.setBezelStyle_(NSBezelStyleRegularSquare)
-        btn.setBordered_(False)
-        btn.setTarget_(self)
-        btn.setAction_("toggleAdvanced:")
-        self._advanced_toggle_btn = btn
-        row.addArrangedSubview_(btn)
-
-        # Spacer / separator
-        sep = NSTextField.labelWithString_("")
-        sep.setFrame_(NSMakeRect(0, 0, content_width - 24 - 126, row_height))
-        row.addArrangedSubview_(sep)
-
-        return row
-
-    def _make_advanced_stack(self, content_width: float) -> NSStackView:
-        """Build the collapsible Advanced content stack.
-
-        Contains:
-        - 'Enable HTTPS' checkbox
-        - SSL_CERTFILE row (conditionally enabled)
-        - SSL_KEYFILE row (conditionally enabled)
-
-        Args:
-            content_width: Total content area width for layout.
-
-        Returns:
-            A configured NSStackView (initially hidden).
-        """
-        row_height = 24.0
-        spacing = 8.0
-
-        stack = NSStackView.alloc().initWithFrame_(
-            NSMakeRect(0, 0, content_width - 24, 3 * (row_height + spacing))
-        )
-        stack.setOrientation_(NSUserInterfaceLayoutOrientationVertical)
-        stack.setSpacing_(spacing)
-
-        # ── HTTPS checkbox ────────────────────────────────────────────
         https_enabled = bool(
             self.initial_values.get("SSL_CERTFILE", "").strip()
             or self.initial_values.get("SSL_KEYFILE", "").strip()
         )
 
-        cb = NSButton.alloc().initWithFrame_(NSMakeRect(0, 0, content_width - 24, row_height))
+        stride = self._row_stride()
+        n_regular = len(regular_keys)
+        n_adv_content = len(adv_non_tls) + 1 + len(tls_keys)
+
+        # Canvas height when expanded (all rows visible)
+        # Layout top-to-bottom: gap, row, gap, row, ..., gap at bottom
+        collapsed_h = _ROW_GAP + (n_regular + 1) * stride   # +1 for toggle btn
+        expanded_h = collapsed_h + n_adv_content * stride
+
+        canvas_w = _W - _PAD * 2
+        self._collapsed_h = collapsed_h
+        self._expanded_h = expanded_h
+        self._canvas_w = canvas_w
+
+        canvas = NSView.alloc().initWithFrame_(NSMakeRect(0, 0, canvas_w, expanded_h))
+
+        # Place rows top-to-bottom (y=0 is bottom in NSView so we subtract)
+        y = expanded_h - _ROW_GAP  # start just inside top edge
+
+        for key in regular_keys:
+            y -= _ROW_H
+            self._place_row(key, canvas, y, canvas_w)
+            y -= _ROW_GAP
+
+        # Advanced toggle button row
+        y -= _ROW_H
+        adv_btn = NSButton.alloc().initWithFrame_(NSMakeRect(0, y, 140, _ROW_H))
+        adv_btn.setTitle_("▶  Advanced")
+        adv_btn.setBezelStyle_(NSBezelStyleRegularSquare)
+        adv_btn.setBordered_(False)
+        adv_btn.setAlignment_(0)
+        adv_btn.setTarget_(self)
+        adv_btn.setAction_("toggleAdvanced:")
+        self._advanced_toggle_btn = adv_btn
+        canvas.addSubview_(adv_btn)
+        y -= _ROW_GAP
+
+        adv_views: List[NSView] = []
+
+        for key in adv_non_tls:
+            y -= _ROW_H
+            row = self._place_row(key, canvas, y, canvas_w)
+            adv_views.append(row)
+            y -= _ROW_GAP
+
+        y -= _ROW_H
+        cb = NSButton.alloc().initWithFrame_(NSMakeRect(0, y, canvas_w, _ROW_H))
         cb.setButtonType_(NSButtonTypeSwitch)
         cb.setTitle_("  Enable HTTPS (TLS)")
         cb.setState_(1 if https_enabled else 0)
         cb.setTarget_(self)
         cb.setAction_("httpsToggled:")
         self._https_checkbox = cb
-        stack.addArrangedSubview_(cb)
+        canvas.addSubview_(cb)
+        adv_views.append(cb)
+        y -= _ROW_GAP
 
-        # ── SSL_CERTFILE / SSL_KEYFILE rows ───────────────────────────
-        for key in ("SSL_CERTFILE", "SSL_KEYFILE"):
-            if key not in self.keys:
-                continue
-            row = self._make_row(key, self.labels.get(key, key), content_width)
-            # Disable the field initially if HTTPS is off
+        for key in tls_keys:
+            y -= _ROW_H
+            row = self._place_row(key, canvas, y, canvas_w)
+            adv_views.append(row)
             field = self.fields.get(key)
             if field is not None:
                 field.setEnabled_(https_enabled)
                 field.setTextColor_(
-                    NSColor.controlTextColor() if https_enabled else NSColor.disabledControlTextColor()
+                    NSColor.controlTextColor() if https_enabled
+                    else NSColor.disabledControlTextColor()
                 )
-            stack.addArrangedSubview_(row)
+            y -= _ROW_GAP
 
-        return stack
+        self._advanced_views = adv_views
+        for v in adv_views:
+            v.setHidden_(True)
 
-    # ------------------------------------------------------------------
-    # Row builders
-    # ------------------------------------------------------------------
-
-    def _make_row(self, key: str, label_text: str, content_width: float) -> NSView:
-        """Build a single label + input field row.
-
-        Args:
-            key: .env key name.
-            label_text: Human-readable label shown to the left.
-            content_width: Total content area width.
-
-        Returns:
-            An NSStackView configured as a horizontal row.
-        """
-        row_height = 24.0
-        row = NSStackView.alloc().initWithFrame_(
-            NSMakeRect(0, 0, content_width - 24, row_height)
+        viewport_h = min(collapsed_h, _MAX_VIS_H)
+        sv = NSScrollView.alloc().initWithFrame_(
+            NSMakeRect(_PAD, _BTN_AREA, canvas_w, viewport_h)
         )
-        row.setOrientation_(NSUserInterfaceLayoutOrientationHorizontal)
-        row.setSpacing_(6)
+        sv.setDocumentView_(canvas)
+        sv.setHasVerticalScroller_(True)
+        sv.setHasHorizontalScroller_(False)
+        sv.setAutohidesScrollers_(True)
+        sv.setBorderType_(0)
+        self._scroll_view = sv
 
-        label = NSTextField.labelWithString_(label_text)
-        label.setFrame_(NSMakeRect(0, 0, 180, row_height))
-        row.addArrangedSubview_(label)
+        # Scroll to top (highest y value since NSView y=0 is bottom)
+        canvas.scrollPoint_(NSMakePoint(0, expanded_h - viewport_h))
+
+        win_h = viewport_h + _BTN_AREA + 4
+        window = NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
+            NSMakeRect(0, 0, _W, win_h),
+            1 << 2 | 1 << 3,
+            2,
+            False,
+        )
+        window.setTitle_("Kiro Gateway — Settings")
+        window.setReleasedWhenClosed_(False)
+
+        cv = window.contentView()
+        cv.addSubview_(sv)
+
+        save_btn = NSButton.alloc().initWithFrame_(NSMakeRect(_W - 174, 8, 80, _BTN_H := 28))
+        save_btn.setTitle_("Save")
+        save_btn.setBezelStyle_(1)
+        save_btn.setTarget_(self)
+        save_btn.setAction_("saveClicked:")
+        cv.addSubview_(save_btn)
+
+        cancel_btn = NSButton.alloc().initWithFrame_(NSMakeRect(_W - 86, 8, 80, 28))
+        cancel_btn.setTitle_("Cancel")
+        cancel_btn.setBezelStyle_(1)
+        cancel_btn.setTarget_(self)
+        cancel_btn.setAction_("cancelClicked:")
+        cv.addSubview_(cancel_btn)
+
+        return window
+
+    def _place_row(self, key: str, parent: NSView, y: float, canvas_w: float) -> NSView:
+        row = NSView.alloc().initWithFrame_(NSMakeRect(0, y, canvas_w, _ROW_H))
+
+        lbl = NSTextField.labelWithString_(self.labels.get(key, key))
+        lbl.setFrame_(NSMakeRect(0, 0, _LABEL_W, _ROW_H))
+        lbl.setAlignment_(0)
+        row.addSubview_(lbl)
 
         if key in _SECRET_KEYS:
-            secure_field, plain_field, toggle_btn = self._make_secret_field(key)
-            row.addArrangedSubview_(secure_field)
-            row.addArrangedSubview_(toggle_btn)
-            self._secret_pairs[key] = (secure_field, plain_field)
+            secure, plain, btn = self._make_secret_field(key)
+            f_w = _FIELD_W - 36
+            secure.setFrame_(NSMakeRect(_LABEL_W + 4, 0, f_w, _ROW_H))
+            btn.setFrame_(NSMakeRect(_LABEL_W + 4 + f_w + 4, 0, 28, _ROW_H))
+            row.addSubview_(secure)
+            row.addSubview_(btn)
+            self._secret_pairs[key] = (secure, plain)
             self._secret_rows[key] = row
-            self.fields[key] = secure_field
+            self.fields[key] = secure
         else:
-            field = NSTextField.alloc().initWithFrame_(NSMakeRect(0, 0, 340, row_height))
+            field = NSTextField.alloc().initWithFrame_(
+                NSMakeRect(_LABEL_W + 4, 0, _FIELD_W, _ROW_H)
+            )
             field.setStringValue_(self.initial_values.get(key, ""))
-            field.setPlaceholderString_(f"{label_text} — empty clears the entry")
-            row.addArrangedSubview_(field)
+            field.setPlaceholderString_(f"{self.labels.get(key, key)} — empty clears the entry")
+            row.addSubview_(field)
             self.fields[key] = field
 
+        parent.addSubview_(row)
         return row
 
     def _make_secret_field(self, key: str) -> Tuple[NSSecureTextField, NSTextField, NSButton]:
-        """Build a masked text field with an eye-toggle reveal button.
-
-        Args:
-            key: .env key name (must be in ``_SECRET_KEYS``).
-
-        Returns:
-            A 3-tuple of (secure_field, plain_field, toggle_button).
-        """
-        row_height = 24.0
         initial = self.initial_values.get(key, "")
         placeholder = f"{self.labels.get(key, key)} — empty clears the entry"
+        f_w = _FIELD_W - 36
 
-        secure = NSSecureTextField.alloc().initWithFrame_(
-            NSMakeRect(0, 0, 340, row_height)
-        )
+        secure = NSSecureTextField.alloc().initWithFrame_(NSMakeRect(0, 0, f_w, _ROW_H))
         secure.setStringValue_(initial)
         secure.setPlaceholderString_(placeholder)
 
-        plain = NSTextField.alloc().initWithFrame_(
-            NSMakeRect(0, 0, 340, row_height)
-        )
+        plain = NSTextField.alloc().initWithFrame_(NSMakeRect(0, 0, f_w, _ROW_H))
         plain.setStringValue_(initial)
         plain.setPlaceholderString_(placeholder)
 
-        btn = NSButton.alloc().initWithFrame_(NSMakeRect(0, 0, 28, row_height))
+        btn = NSButton.alloc().initWithFrame_(NSMakeRect(0, 0, 28, _ROW_H))
         btn.setBezelStyle_(NSBezelStyleRegularSquare)
         btn.setBordered_(False)
         eye_img = _load_icon("eye")
@@ -379,28 +291,41 @@ class SettingsWindowController:
 
         return secure, plain, btn
 
-    # ------------------------------------------------------------------
-    # Actions
-    # ------------------------------------------------------------------
-
     def toggleAdvanced_(self, sender) -> None:  # noqa: N802
-        """Show or hide the Advanced section.
-
-        Args:
-            sender: The disclosure button that was clicked.
-        """
         self._advanced_visible = not self._advanced_visible
-        self._advanced_stack.setHidden_(not self._advanced_visible)
+        hidden = not self._advanced_visible
+        for v in self._advanced_views:
+            v.setHidden_(hidden)
+
+        arrow = "▼" if self._advanced_visible else "▶"
         if self._advanced_toggle_btn is not None:
-            arrow = "▼" if self._advanced_visible else "▶"
             self._advanced_toggle_btn.setTitle_(f"{arrow}  Advanced")
 
-    def httpsToggled_(self, sender) -> None:  # noqa: N802
-        """Enable or disable the SSL_CERTFILE / SSL_KEYFILE fields.
+        if self._scroll_view is not None:
+            new_canvas_h = self._expanded_h if self._advanced_visible else self._collapsed_h
+            viewport_h = min(new_canvas_h, _MAX_VIS_H)
+            sv_origin = self._scroll_view.frame().origin
+            self._scroll_view.setFrame_(
+                NSMakeRect(sv_origin.x, _BTN_AREA, self._canvas_w, viewport_h)
+            )
+            if self.window is not None:
+                old_frame = self.window.frame()
+                new_win_h = viewport_h + _BTN_AREA + 4
+                delta = new_win_h - old_frame.size.height
+                self.window.setFrame_(
+                    NSMakeRect(
+                        old_frame.origin.x,
+                        old_frame.origin.y - delta,
+                        _W,
+                        new_win_h,
+                    ),
+                    True,
+                )
+            if self._advanced_visible:
+                doc = self._scroll_view.documentView()
+                doc.scrollPoint_(NSMakePoint(0, self._expanded_h - viewport_h))
 
-        Args:
-            sender: The HTTPS checkbox button.
-        """
+    def httpsToggled_(self, sender) -> None:  # noqa: N802
         enabled = sender.state() == 1
         for key in ("SSL_CERTFILE", "SSL_KEYFILE"):
             field = self.fields.get(key)
@@ -408,15 +333,11 @@ class SettingsWindowController:
                 continue
             field.setEnabled_(enabled)
             field.setTextColor_(
-                NSColor.controlTextColor() if enabled else NSColor.disabledControlTextColor()
+                NSColor.controlTextColor() if enabled
+                else NSColor.disabledControlTextColor()
             )
 
     def toggleReveal_(self, sender) -> None:  # noqa: N802
-        """Swap secure ↔ plain text field for a secret key.
-
-        Args:
-            sender: The eye-icon button that was clicked.
-        """
         key = objc.getAssociatedObject(sender, b"secret_key")
         if key is None or key not in self._secret_pairs:
             return
@@ -430,23 +351,20 @@ class SettingsWindowController:
         else:
             secure.setStringValue_(plain.stringValue())
 
-        row.removeArrangedSubview_(secure if currently_secure else plain)
         (secure if currently_secure else plain).removeFromSuperview()
-        row.insertArrangedSubview_atIndex_(plain if currently_secure else secure, 1)
-        self.fields[key] = plain if currently_secure else secure
+        next_field = plain if currently_secure else secure
+        f_w = _FIELD_W - 36
+        next_field.setFrame_(NSMakeRect(_LABEL_W + 4, 0, f_w, _ROW_H))
+        row.addSubview_(next_field)
+        row.addSubview_(sender)
+        self.fields[key] = next_field
 
         new_icon = _load_icon("eye-slash" if currently_secure else "eye")
         if new_icon:
             sender.setImage_(new_icon)
 
     def saveClicked_(self, sender) -> None:  # noqa: N802
-        """Collect field values and invoke the on_save callback.
-
-        Args:
-            sender: The Save button.
-        """
         collected = {key: field.stringValue() for key, field in self.fields.items()}
-        # When HTTPS is disabled, clear the TLS paths so they don't linger in .env
         if self._https_checkbox is not None and self._https_checkbox.state() == 0:
             for key in _HTTPS_KEYS:
                 if key in collected:
@@ -455,27 +373,12 @@ class SettingsWindowController:
         self.on_save(collected)
 
     def cancelClicked_(self, sender) -> None:  # noqa: N802
-        """Dismiss the window without saving.
-
-        Args:
-            sender: The Cancel button.
-        """
         self._close()
 
     def windowWillClose_(self, notification) -> None:  # noqa: N802
-        """Handle window close notification.
-
-        Args:
-            notification: The NSNotification from AppKit.
-        """
         self.window = None
 
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
-
     def _close(self) -> None:
-        """Order out and release the window reference."""
         if self.window is not None:
             self.window.orderOut_(None)
             self.window = None

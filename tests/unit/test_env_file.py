@@ -395,8 +395,12 @@ class TestSettingsRevealToggle:
              patch("kiro.settings_window.NSTextField"), \
              patch("kiro.settings_window.NSButton"), \
              patch("kiro.settings_window.NSImage"), \
+             patch("kiro.settings_window.NSView"), \
              patch("kiro.settings_window.NSMakeRect", return_value=None), \
-             patch("kiro.settings_window.NSStackView"), \
+             patch("kiro.settings_window.NSScrollView"), \
+             patch("kiro.settings_window.NSButtonTypeSwitch", 0), \
+             patch("kiro.settings_window.NSColor"), \
+             patch("kiro.settings_window.NSMakePoint", return_value=None), \
              patch("kiro.settings_window.objc"):
             from kiro.settings_window import SettingsWindowController
             ctrl = SettingsWindowController(
@@ -405,7 +409,8 @@ class TestSettingsRevealToggle:
                 values={"SERVER_PORT": "3000"},
                 on_save=MagicMock(),
             )
-            ctrl._make_row("SERVER_PORT", "Port", 560.0)
+            parent = MagicMock()
+            ctrl._place_row("SERVER_PORT", parent, 0.0, 532.0)
             assert "SERVER_PORT" not in ctrl._secret_pairs
 
 
@@ -415,13 +420,12 @@ def _patch_appkit():
         patch("kiro.settings_window.NSTextField"),
         patch("kiro.settings_window.NSButton"),
         patch("kiro.settings_window.NSImage"),
+        patch("kiro.settings_window.NSView"),
         patch("kiro.settings_window.NSMakeRect", return_value=None),
-        patch("kiro.settings_window.NSStackView"),
-        patch("kiro.settings_window.NSBox"),
-        patch("kiro.settings_window.NSBoxSeparator", 0),
+        patch("kiro.settings_window.NSScrollView"),
         patch("kiro.settings_window.NSButtonTypeSwitch", 0),
         patch("kiro.settings_window.NSColor"),
-        patch("kiro.settings_window.NSFont"),
+        patch("kiro.settings_window.NSMakePoint", return_value=None),
         patch("kiro.settings_window.objc"),
     )
 
@@ -462,27 +466,29 @@ class TestAdvancedSection:
     def test_toggle_advanced_shows_section(self):
         ctrl, stack = self._make_ctrl()
         with stack:
-            adv_stack = MagicMock()
-            ctrl._advanced_stack = adv_stack
+            v1 = MagicMock()
+            v2 = MagicMock()
+            ctrl._advanced_views = [v1, v2]
             ctrl._advanced_toggle_btn = MagicMock()
 
             ctrl.toggleAdvanced_(MagicMock())
 
             assert ctrl._advanced_visible is True
-            adv_stack.setHidden_.assert_called_with(False)
+            v1.setHidden_.assert_called_with(False)
+            v2.setHidden_.assert_called_with(False)
 
     def test_toggle_advanced_twice_collapses_section(self):
         ctrl, stack = self._make_ctrl()
         with stack:
-            adv_stack = MagicMock()
-            ctrl._advanced_stack = adv_stack
+            v1 = MagicMock()
+            ctrl._advanced_views = [v1]
             ctrl._advanced_toggle_btn = MagicMock()
 
             ctrl.toggleAdvanced_(MagicMock())
             ctrl.toggleAdvanced_(MagicMock())
 
             assert ctrl._advanced_visible is False
-            adv_stack.setHidden_.assert_called_with(True)
+            v1.setHidden_.assert_called_with(True)
 
     def test_toggle_button_label_changes_on_expand(self):
         ctrl, stack = self._make_ctrl()
