@@ -259,6 +259,8 @@ class SettingsWindowController:
             )
             field.setStringValue_(self.initial_values.get(key, ""))
             field.setPlaceholderString_(f"{self.labels.get(key, key)} — empty clears the entry")
+            field.cell().setWraps_(False)
+            field.cell().setScrollable_(True)
             row.addSubview_(field)
             self.fields[key] = field
 
@@ -277,6 +279,8 @@ class SettingsWindowController:
         plain = NSTextField.alloc().initWithFrame_(NSMakeRect(0, 0, f_w, _ROW_H))
         plain.setStringValue_(initial)
         plain.setPlaceholderString_(placeholder)
+        plain.cell().setWraps_(False)
+        plain.cell().setScrollable_(True)
 
         btn = NSButton.alloc().initWithFrame_(NSMakeRect(0, 0, 28, _ROW_H))
         btn.setBezelStyle_(NSBezelStyleRegularSquare)
