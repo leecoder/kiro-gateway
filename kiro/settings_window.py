@@ -31,6 +31,9 @@ from AppKit import (
     NSImage,
     NSButtonTypeSwitch,
     NSColor,
+    NSWindowStyleMaskTitled,
+    NSWindowStyleMaskClosable,
+    NSWindowStyleMaskResizable,
 )
 from Foundation import NSMakePoint, NSMakeSize
 
@@ -64,6 +67,12 @@ def _load_icon(name: str) -> Optional[NSImage]:
     if os.path.exists(path):
         return NSImage.alloc().initWithContentsOfFile_(path)
     return None
+
+
+class _FlippedView(NSView):
+
+    def isFlipped(self) -> bool:  # noqa: N802
+        return True
 
 
 class SettingsWindowController:
@@ -132,18 +141,15 @@ class SettingsWindowController:
         self._expanded_h = expanded_h
         self._canvas_w = canvas_w
 
-        canvas = NSView.alloc().initWithFrame_(NSMakeRect(0, 0, canvas_w, expanded_h))
+        canvas = _FlippedView.alloc().initWithFrame_(NSMakeRect(0, 0, canvas_w, expanded_h))
 
-        # Place rows top-to-bottom (y=0 is bottom in NSView so we subtract)
-        y = expanded_h - _ROW_GAP  # start just inside top edge
+        y = _ROW_GAP
 
         for key in regular_keys:
-            y -= _ROW_H
             self._place_row(key, canvas, y, canvas_w)
-            y -= _ROW_GAP
+            y += stride
 
         # Advanced toggle button row
-        y -= _ROW_H
         adv_btn = NSButton.alloc().initWithFrame_(NSMakeRect(0, y, 140, _ROW_H))
         adv_btn.setTitle_("▶  Advanced")
         adv_btn.setBezelStyle_(NSBezelStyleRegularSquare)
@@ -153,17 +159,15 @@ class SettingsWindowController:
         adv_btn.setAction_("toggleAdvanced:")
         self._advanced_toggle_btn = adv_btn
         canvas.addSubview_(adv_btn)
-        y -= _ROW_GAP
+        y += stride
 
         adv_views: List[NSView] = []
 
         for key in adv_non_tls:
-            y -= _ROW_H
             row = self._place_row(key, canvas, y, canvas_w)
             adv_views.append(row)
-            y -= _ROW_GAP
+            y += stride
 
-        y -= _ROW_H
         cb = NSButton.alloc().initWithFrame_(NSMakeRect(0, y, canvas_w, _ROW_H))
         cb.setButtonType_(NSButtonTypeSwitch)
         cb.setTitle_("  Enable HTTPS (TLS)")
@@ -173,10 +177,9 @@ class SettingsWindowController:
         self._https_checkbox = cb
         canvas.addSubview_(cb)
         adv_views.append(cb)
-        y -= _ROW_GAP
+        y += stride
 
         for key in tls_keys:
-            y -= _ROW_H
             row = self._place_row(key, canvas, y, canvas_w)
             adv_views.append(row)
             field = self.fields.get(key)
@@ -186,7 +189,7 @@ class SettingsWindowController:
                     NSColor.controlTextColor() if https_enabled
                     else NSColor.disabledControlTextColor()
                 )
-            y -= _ROW_GAP
+            y += stride
 
         self._advanced_views = adv_views
         for v in adv_views:
@@ -205,13 +208,12 @@ class SettingsWindowController:
         sv.setBackgroundColor_(NSColor.windowBackgroundColor())
         self._scroll_view = sv
 
-        # Scroll to top (highest y value since NSView y=0 is bottom)
-        canvas.scrollPoint_(NSMakePoint(0, expanded_h - viewport_h))
+        canvas.scrollPoint_(NSMakePoint(0, 0))
 
         win_h = viewport_h + _BTN_AREA + 4
         window = NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
             NSMakeRect(0, 0, _W, win_h),
-            1 << 2 | 1 << 3,
+            NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskResizable,
             2,
             False,
         )
@@ -238,7 +240,7 @@ class SettingsWindowController:
         return window
 
     def _place_row(self, key: str, parent: NSView, y: float, canvas_w: float) -> NSView:
-        row = NSView.alloc().initWithFrame_(NSMakeRect(0, y, canvas_w, _ROW_H))
+        row = _FlippedView.alloc().initWithFrame_(NSMakeRect(0, y, canvas_w, _ROW_H))
 
         lbl = NSTextField.labelWithString_(self.labels.get(key, key))
         lbl.setFrame_(NSMakeRect(0, 0, _LABEL_W, _ROW_H))
@@ -318,7 +320,7 @@ class SettingsWindowController:
                 self.window.setContentSize_(NSMakeSize(_W, new_content_h))
             if self._advanced_visible:
                 doc = self._scroll_view.documentView()
-                doc.scrollPoint_(NSMakePoint(0, self._expanded_h - viewport_h))
+                doc.scrollPoint_(NSMakePoint(0, 0))
 
     def httpsToggled_(self, sender) -> None:  # noqa: N802
         enabled = sender.state() == 1
