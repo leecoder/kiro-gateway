@@ -76,16 +76,16 @@ EDITABLE_ENV_KEYS = (
 )
 
 EDITABLE_ENV_LABELS = {
-    "PROXY_API_KEY": "API Key (PROXY_API_KEY)",
-    "SERVER_PORT": "Port (SERVER_PORT)",
-    "SERVER_HOST": "Bind Host (SERVER_HOST)",
-    "SSL_CERTFILE": "TLS Cert File (SSL_CERTFILE)",
-    "SSL_KEYFILE": "TLS Key File (SSL_KEYFILE)",
-    "KIRO_CREDS_FILE": "Kiro Creds File (KIRO_CREDS_FILE)",
-    "KIRO_CLI_DB_FILE": "Kiro CLI DB (KIRO_CLI_DB_FILE)",
-    "KIRO_API_REGION": "API Region (KIRO_API_REGION)",
-    "VPN_PROXY_URL": "VPN Proxy URL (VPN_PROXY_URL)",
-    "DEBUG_MODE": "Debug Mode (DEBUG_MODE)",
+    "PROXY_API_KEY":   "API Key",
+    "SERVER_PORT":     "Port",
+    "SERVER_HOST":     "Bind Host",
+    "SSL_CERTFILE":    "TLS Cert File",
+    "SSL_KEYFILE":     "TLS Key File",
+    "KIRO_CREDS_FILE": "Kiro Creds File",
+    "KIRO_CLI_DB_FILE": "Kiro CLI DB",
+    "KIRO_API_REGION": "API Region",
+    "VPN_PROXY_URL":   "VPN Proxy URL",
+    "DEBUG_MODE":      "Debug Mode",
 }
 
 
