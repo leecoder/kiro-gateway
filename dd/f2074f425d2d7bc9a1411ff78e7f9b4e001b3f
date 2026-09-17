@@ -1,0 +1,20 @@
+kiro/settings_window.py
+  s_49412daa5cf834::t_411ef0c1c7908a 282-283
+  s_49412daa5cf834::t_942da0d36df5ea 262-263
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "ddf2074f425d2d7bc9a1411ff78e7f9b4e001b3f",
+  "prompts": {},
+  "sessions": {
+    "s_49412daa5cf834": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ses_f7ff0827fffexNa25dAxBhABFM",
+        "model": "unknown"
+      },
+      "human_author": "leecoder <leecoder@aol.com>"
+    }
+  }
+}
