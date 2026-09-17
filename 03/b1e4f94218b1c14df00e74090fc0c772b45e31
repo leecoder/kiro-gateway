@@ -1,0 +1,37 @@
+kiro/settings_window.py
+  s_49412daa5cf834::t_7f88439215f1d6 27,40-43,90,112,148-150,152-154,160,186-187,210,212-214,216-218,221,247,253,255,261,300,336-337
+  s_49412daa5cf834::t_0393f1ef919ad1 47-54,57,87,92-94,96,108-109,113-114,116-119,121,123,125-128,130-133,135,137-138,141-147,151,155-158,161-181,188-189,191-193,195-204,206-207,209,211,219-220,222,227,229,234,238-239,241-244,248-252,257-259,262,265,271,273,277,281,296-299,304-326,355-360
+  s_8fce51e94546a2::t_af334129863b50 45,159,182-185,328
+tests/unit/test_env_file.py
+  s_49412daa5cf834::t_ac535d65c92d5f 428
+  s_49412daa5cf834::t_c1ea6340391126 469-471,477-478,483-484,491
+  s_49412daa5cf834::t_69935fce27d9cf 400-402
+  s_49412daa5cf834::t_56d0d22f25faa6 398
+  s_49412daa5cf834::t_a7249332317e12 403,412-413
+  s_49412daa5cf834::t_09bade0d5ce052 423
+  s_49412daa5cf834::t_66d8157b4fa2c4 425
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "03b1e4f94218b1c14df00e74090fc0c772b45e31",
+  "prompts": {},
+  "sessions": {
+    "s_49412daa5cf834": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ses_f7ff0827fffexNa25dAxBhABFM",
+        "model": "unknown"
+      },
+      "human_author": "leecoder <leecoder@aol.com>"
+    },
+    "s_8fce51e94546a2": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_f7ff0827fffexNa25dAxBhABFM",
+        "model": "databricks/databricks-glm-5-3-flash"
+      },
+      "human_author": "leecoder <leecoder@aol.com>"
+    }
+  }
+}
